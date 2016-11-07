@@ -1,0 +1,240 @@
+from bs4 import BeautifulSoup
+import urllib.request
+import time,re
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from multiprocessing.dummy import Pool as threadspool
+
+start_url='http://search.smzdm.com/?c=home&s=双11预售'
+url = 'http://search.smzdm.com/?c=home&s='+urllib.parse.quote('双11预售')+'&order=score'
+
+def url_open(url):
+    req = urllib.request.Request(url)
+    req.add_header('User-Agent',
+                   'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.22 Safari/537.36 SE 2.X MetaSr 1.0')
+    page = urllib.request.urlopen(req)  # 模仿浏览器登录
+    txt = page.read().decode('utf-8')
+    soup = BeautifulSoup(txt, 'lxml')
+    return soup
+
+# soup = url_open(url)
+# dates = soup.select('span.feed-block-extras')
+# for i in dates:
+#     date=i.text.split('  ')[0]
+#     print(date,len(date))
+
+
+def get_item_info(url):
+    soup = url_open(url)
+    sales = soup.select('h5 a div')
+    ups = soup.select('span span.price-btn-up')
+    downs = soup.select('span span.price-btn-down')
+    coms = soup.select('div span.feed-block-extras span')
+    dates = soup.select('span.feed-block-extras')
+    cate1 = soup.select('#filter-block > div:nth-of-type(1) > div.filter-row-con > div.filter-items.J_filter_items > div > span')
+    cates = cate1 *len(ups)
+    sale, up, down, com, cate,date = [], [], [], [], [],[]
+    for a, b, c, d, e ,f in zip(sales, ups, downs, coms, cates,dates):
+        sale.append(a.text)
+        b1 = int(re.findall(r"\d+", b.text)[0])
+        up.append(b1)
+        c1 = int(re.findall(r"\d+", c.text)[0])
+        down.append(c1)
+        com.append(d.text[:-1])
+        cate.append(e.text)
+        date.append(f.text.split('  ')[0])
+    frame = pd.DataFrame([sale, up, down, com, cate, date],
+                         index=['sales', 'ups', 'downs', 'coms', 'cates', 'dates'])  # 将数据整合
+    frame = frame.T
+    return frame
+
+
+soup = url_open(url)
+page_links = soup.select('#filter-block > div:nth-of-type(1) > div.filter-row-con > div.filter-items.J_filter_items > div > a')
+page_link =[]
+for i in page_links:
+    page_link.append(i.get('href'))
+#print(page_link)
+time.sleep(2)
+
+urls =[]
+for link in page_link:
+    for num in range(1,5):
+        page_url = link +'&p={}'.format(str(num))
+        soup = url_open(page_url)
+        if soup.find(attrs={'class':'no-result-text'}):  # 直接设置一定的页面链接，通过页面显示的信息有误来筛选链接
+            pass
+        else:
+            urls.append(page_url)
+#print(urls)
+
+pool = threadspool(4)
+frame_list = pool.map(get_item_info,urls)
+i, j, k, l,m,n = [], [], [], [],[],[]
+[(i.extend(x['sales'])) for x in frame_list]
+[(j.extend(x['ups'])) for x in frame_list]
+[(k.extend(x['downs'])) for x in frame_list]
+[(l.extend(x['coms'])) for x in frame_list]
+[(m.extend(x['cates'])) for x in frame_list]
+[(n.extend(x['dates'])) for x in frame_list]
+df = pd.DataFrame([i, j, k, l,m,n], index=['sales', 'ups', 'downs', 'coms', 'cates','dates'])
+df1 = df.T.set_index('cates')
+print(df1)
+
+criterion = df1['dates'].map(lambda x: len(x)>10)
+df2=df1[criterion]
+s=[]
+for y in df4['dates']:
+    s.append(y.split(' ')[0])
+s1= pd.Series(s,name='dates1',index=df4.index)
+df5 = pd.concat([df4, s1], axis=1)
+print(df5)
+
+#-----双11预售平台发布商品数量：条形图---
+plt.figure(figsize=(8,6))
+xnum=np.arange(len(ynum1.index))+1
+h=np.array(list(ynum1['sales']))
+yticks=list(ynum1.index)
+bars=plt.barh(xnum,h,height =0.8,align='center',color = 'cyan',alpha=0.8)
+plt.yticks(xnum,yticks,size='small')
+plt.xlabel('number')
+plt.ylabel('电商平台')
+plt.title('双11预售发布商品数量')
+for b,d in zip(bars,h):
+    plt.text(b.get_width() +5, b.get_y() + b.get_height()/2, '%.0f' % d,ha='center', va='center',fontsize=7)
+plt.show()
+
+#-----双11预售不同类目下发布的商品数量：双柱柱状图
+goodsnum=df5num.groupby(df5num.index).count()
+tmallnum=df5num[df5num['coms'].isin([' 天猫精选'])]
+goodsnum1=tmallnum.groupby(tmallnum.index).count()
+print(goodsnum1)
+
+plt.figure(figsize=(10,6))
+x=np.arange(14)+1 #品类数量已知为14
+y=np.array(list(goodsnum['sales']))
+y1=np.array(list(goodsnum1['sales']))
+xticks1=list(goodsnum.index)
+plt.bar(x,y,width = 0.35,align='center',color = 'lightskyblue',alpha=0.8)
+plt.bar(x+0.35,y1,width = 0.35,align='center',color = 'r',alpha=0.5)
+plt.xticks(x,xticks1,size='small',rotation=30)
+plt.xlabel('商品类目')
+plt.ylabel('number')
+plt.title('双11预售不同类目下发布的商品数量')
+#for b,d in zip(bars,h):
+    #plt.text(b.get_width() +5, b.get_y() + b.get_height()/2, '%.0f' % d,ha='center', va='center',fontsize=7)
+for a,b in zip(x,y):
+    plt.text(a+0.3, b+0.05, '%.0f' % b, ha='center', va= 'bottom',fontsize=7)
+
+for a,b in zip(x,y1):
+    plt.text(a+0.6, b+0.05, '%.0f' % b, ha='center', va= 'bottom',fontsize=7)
+plt.legend(['所有', '天猫精选'], loc='upper left',fontsize=10)
+plt.ylim(0,520)
+#plt.grid()  #网格线
+plt.show()
+
+#-----双11预售发布的商品日期趋势：折线图
+# df5date=df5.loc[:,['coms','sales','dates1']]
+df6date=df5date.groupby('dates1').count()
+df6date1=df6date.drop(['2015-10-22'])
+tmalldate=df5date[df5date['coms'].isin([' 天猫精选'])]
+tmalldate1=tmalldate.groupby('dates1').count()
+tmalldate2=tmalldate1.drop(['2015-10-22'])
+print(df6date1,tmalldate2)
+
+plt.figure(figsize=(9,4))
+x1=np.arange(len(df6date1.index))+1
+y1=np.array(list(df6date1['sales']))
+#x2=np.arange(len(tmalldate2.index))+1
+#y2=np.array(list(tmalldate2['sales']))
+xticks1=list(df6date1.index)
+plt.plot(x1,y1,"g")
+#plt.plot(x2,y2,"r")
+plt.xticks(x1,xticks1,size='small',rotation=30)
+plt.xlabel('日期')
+plt.ylabel('number')
+plt.title('双11预售发布的商品日期趋势')
+# plt.legend(['所有', '天猫精选'], loc='upper left',fontsize=10)
+plt.grid()
+plt.show()
+
+plt.figure(figsize=(9,4))
+x2=np.arange(len(tmalldate2.index))+1
+y2=np.array(list(tmalldate2['sales']))
+xticks1=list(tmalldate2.index)
+plt.plot(x2,y2,"r")
+plt.xticks(x2,xticks1,size='small',rotation=30)
+plt.xlabel('日期')
+plt.ylabel('number')
+plt.title('双11预售发布的商品日期趋势')
+plt.legend(['天猫精选'], loc='upper left',fontsize=10)
+plt.grid()  #网格线
+plt.show()
+
+#-------不同电商平台双11预售值不值得买的平均评价：累计柱状图
+df7=df5.ix[(df5.ups+df5.downs)>10]
+upratio=100*df7.ups/(df7.ups+df7.downs)
+s1= pd.Series(upratio,name='upratios',index=df7.index)
+df8 = pd.concat([df7, s1], axis=1)
+print(df8)
+
+df8up=df8.loc[:,['coms','ups']]
+upcount=df8up.groupby('coms').count()
+upsum=df8up.groupby('coms').sum()
+upavr=upsum/upcount
+df8down=df8.loc[:,['coms','downs']]
+downcount=df8down.groupby('coms').count()
+downsum=df8down.groupby('coms').sum()
+downavr=downsum/downcount
+
+plt.figure(figsize=(10,5))
+x=np.arange(len(upavr.index))+1
+y1=np.array(list(upavr['ups']))
+y=np.array(list(downavr['downs']))
+xticks1=list(upavr.index)
+plt.bar(x,y,width = 0.35,align='center',color = 'g',alpha=0.8)
+plt.bar(x,y1,width = 0.35,align='center',color = 'y',bottom=y,alpha=0.8)
+plt.xticks(x-0.5,xticks1,size='small',rotation=33)
+plt.xlabel('电商平台')
+plt.ylabel('number')
+plt.title('不同电商平台双11预售值不值得买的平均评价')
+for a,b in zip(x,y):
+    plt.text(a+0.3, b-0.5, '%.0f' % b, ha='center', va= 'bottom',fontsize=7)
+
+for a,b in zip(x,y1):
+    plt.text(a+0.3, b+1, '%.0f' % b, ha='center', va= 'bottom',fontsize=7)
+plt.legend(['不值得买', '值得买'], loc='upper right',fontsize=10)
+plt.grid()  #网格线
+plt.ylim(0,270)
+plt.show()
+
+#-----双11预售不同商品值得买占比均值:折线图
+df8ratio=df8.loc[:,['upratios']]
+ratiocount=df8ratio.groupby(df8ratio.index).count()
+ratiosum=df8ratio.groupby(df8ratio.index).sum()
+ratioavr=ratiosum/ratiocount
+print(ratioavr)
+
+plt.figure(figsize=(9,4))
+x1=np.arange(len(ratioavr.index))+1
+y1=np.array(list(ratioavr['upratios']))
+xticks1=list(ratioavr.index)
+plt.plot(x1,y1,"g")
+plt.xticks(x1,xticks1,size='small',rotation=30)
+plt.xlabel('商品类目')
+plt.ylabel('值得买占比均值')
+plt.title('双11预售不同商品值得买占比均值')
+# plt.legend(['所有', '天猫精选'], loc='upper left',fontsize=10)
+for a,b in zip(x1,y1):
+    plt.text(a+0.3, b+0.5, '%.2f' % b, ha='center', va= 'bottom',fontsize=7)
+plt.ylim(58,83)
+plt.legend(['值得买占比均值'], loc='upper right',fontsize=10)
+plt.show()
+
+#-----促销方式
+sale=list(df5['sales'])
+print(sale)
+
+
+
